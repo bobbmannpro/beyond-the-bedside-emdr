@@ -19,7 +19,7 @@ function useTone(enabled) {
   const play = useCallback((side) => {
     if (!enabled || !ctxRef.current) return;
     const ctx = ctxRef.current;
-    if (ctx.state === "suspended") { ctx.resume(); return; }
+    if (ctx.state === "suspended") ctx.resume();
     try {
       const osc   = ctx.createOscillator();
       const gain  = ctx.createGain();
@@ -102,20 +102,20 @@ function BilateralDot({ active, speed = "medium", sets = 6, onComplete, onTone }
   const [rep, setRep] = useState(0);
   const totalReps = sets * 2;
   const timerRef = useRef(null);
+  const posRef = useRef(0);
+  const repRef = useRef(0);
 
   useEffect(() => {
-    if (!active) { setPos(0); setRep(0); return; }
+    if (!active) { setPos(0); setRep(0); posRef.current = 0; repRef.current = 0; return; }
     timerRef.current = setInterval(() => {
-      setPos(p => {
-        const next = p === 0 ? 1 : 0;
-        onTone?.(next === 0 ? "left" : "right");
-        return next;
-      });
-      setRep(r => {
-        const next = r + 1;
-        if (next >= totalReps) { clearInterval(timerRef.current); onComplete?.(); }
-        return next;
-      });
+      const nextPos = posRef.current === 0 ? 1 : 0;
+      const nextRep = repRef.current + 1;
+      posRef.current = nextPos;
+      repRef.current = nextRep;
+      setPos(nextPos);
+      setRep(nextRep);
+      onTone?.(nextPos === 0 ? "left" : "right");
+      if (nextRep >= totalReps) { clearInterval(timerRef.current); onComplete?.(); }
     }, SPEEDS[speed]);
     return () => clearInterval(timerRef.current);
   }, [active, speed, totalReps]);
