@@ -22,6 +22,7 @@ function useTone(enabled) {
   const unlock = useCallback(() => {
     if (ctxRef.current) return;
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    ctx.resume();
     bufsRef.current.left = makeToneBuffer(ctx, 396);
     bufsRef.current.right = makeToneBuffer(ctx, 417);
     ctxRef.current = ctx;
