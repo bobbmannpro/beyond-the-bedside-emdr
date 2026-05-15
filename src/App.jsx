@@ -1,60 +1,43 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 
-// Short sine-wave click encoded as base64 WAV (left ~396Hz, right ~417Hz, 0.3s)
-// Generated inline so no external fetch is needed
-function makeToneWav(freq) {
-  const sampleRate = 22050;
-  const duration = 0.28;
-  const numSamples = Math.floor(sampleRate * duration);
-  const buffer = new ArrayBuffer(44 + numSamples * 2);
-  const view = new DataView(buffer);
-  const write = (o, s) => { for (let i = 0; i < s.length; i++) view.setUint8(o + i, s.charCodeAt(i)); };
+function makeToneBuffer(ctx, freq) {
+  const sampleRate = ctx.sampleRate;
+  const numSamples = Math.floor(sampleRate * 0.28);
+  const buffer = ctx.createBuffer(1, numSamples, sampleRate);
+  const data = buffer.getChannelData(0);
   const fadeLen = Math.floor(numSamples * 0.15);
-  write(0, "RIFF"); view.setUint32(4, 36 + numSamples * 2, true);
-  write(8, "WAVE"); write(12, "fmt ");
-  view.setUint32(16, 16, true); view.setUint16(20, 1, true);
-  view.setUint16(22, 1, true); view.setUint32(24, sampleRate, true);
-  view.setUint32(28, sampleRate * 2, true); view.setUint16(32, 2, true);
-  view.setUint16(34, 16, true); write(36, "data");
-  view.setUint32(40, numSamples * 2, true);
   for (let i = 0; i < numSamples; i++) {
     let amp = 0.55;
     if (i < fadeLen) amp *= i / fadeLen;
     else if (i > numSamples - fadeLen) amp *= (numSamples - i) / fadeLen;
-    const sample = Math.round(amp * 32767 * Math.sin(2 * Math.PI * freq * i / sampleRate));
-    view.setInt16(44 + i * 2, sample, true);
+    data[i] = amp * Math.sin(2 * Math.PI * freq * i / sampleRate);
   }
-  const bytes = new Uint8Array(buffer);
-  let bin = "";
-  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
-  return "data:audio/wav;base64," + btoa(bin);
+  return buffer;
 }
 
-const LEFT_SRC  = makeToneWav(396);
-const RIGHT_SRC = makeToneWav(417);
-
 function useTone(enabled) {
-  const leftRef  = useRef(null);
-  const rightRef = useRef(null);
+  const ctxRef = useRef(null);
+  const bufsRef = useRef({});
 
-  useEffect(() => {
-    leftRef.current  = new Audio(LEFT_SRC);
-    rightRef.current = new Audio(RIGHT_SRC);
-    leftRef.current.volume  = 0.7;
-    rightRef.current.volume = 0.7;
+  const unlock = useCallback(() => {
+    if (ctxRef.current) return;
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    bufsRef.current.left = makeToneBuffer(ctx, 396);
+    bufsRef.current.right = makeToneBuffer(ctx, 417);
+    ctxRef.current = ctx;
   }, []);
 
   const play = useCallback((side) => {
-    if (!enabled) return;
+    if (!enabled || !ctxRef.current) return;
     try {
-      const el = side === "left" ? leftRef.current : rightRef.current;
-      if (!el) return;
-      el.currentTime = 0;
-      el.play().catch(() => {});
+      const src = ctxRef.current.createBufferSource();
+      src.buffer = side === "left" ? bufsRef.current.left : bufsRef.current.right;
+      src.connect(ctxRef.current.destination);
+      src.start();
     } catch(e) {}
   }, [enabled]);
 
-  return play;
+  return { play, unlock };
 }
 
 const PROTOCOLS = [
@@ -216,7 +199,7 @@ function SessionPlayer({ protocol, onBack }) {
   const [completed, setCompleted] = useState(false);
   const [audioEnabled, setAudioEnabled] = useState(true);
 
-  const playTone = useTone(audioEnabled);
+  const { play: playTone, unlock: unlockAudio } = useTone(audioEnabled);
   const phase = protocol.phases[phaseIdx];
   const isLast = phaseIdx === protocol.phases.length - 1;
 
@@ -290,7 +273,7 @@ function SessionPlayer({ protocol, onBack }) {
 
       <div style={{ display: "flex", gap: 12 }}>
         {!running ? (
-          <button onClick={() => { setRunning(true); setBilateralDone(false); setTimerDone(false); }}
+          <button onClick={() => { unlockAudio(); setRunning(true); setBilateralDone(false); setTimerDone(false); }}
             style={{ ...btnBase, flex: 1, background: "rgba(124,152,133,0.15)", border: "1px solid rgba(124,152,133,0.4)", color: "#7C9885" }}>
             {phaseIdx === 0 ? "Begin Session" : "Begin Phase"}
           </button>
