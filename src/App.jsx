@@ -32,6 +32,60 @@ function beep(side) {
   } catch (e) {}
 }
 
+// ─── Ambient Music ───────────────────────────────────────────────
+let _ambient = null;
+
+function startAmbient() {
+  if (!_ctx || _ambient) return;
+  const ctx = _ctx;
+  const master = ctx.createGain();
+  master.gain.setValueAtTime(0, ctx.currentTime);
+  master.gain.linearRampToValueAtTime(0.12, ctx.currentTime + 4);
+  master.connect(ctx.destination);
+
+  const layers = [
+    { freq: 174.0, type: "sine",     gain: 0.6 },
+    { freq: 174.6, type: "sine",     gain: 0.4 },
+    { freq: 261.6, type: "sine",     gain: 0.35 },
+    { freq: 349.2, type: "sine",     gain: 0.25 },
+    { freq:  87.0, type: "sine",     gain: 0.5  },
+  ];
+
+  const oscs = layers.map(({ freq, type, gain }) => {
+    const osc = ctx.createOscillator();
+    const g   = ctx.createGain();
+    osc.type = type;
+    osc.frequency.value = freq;
+    g.gain.value = gain;
+    osc.connect(g);
+    g.connect(master);
+    osc.start();
+    return osc;
+  });
+
+  // Slow breath LFO on master gain (0.08 → 0.16 every ~8s)
+  const lfo = ctx.createOscillator();
+  const lfoGain = ctx.createGain();
+  lfo.frequency.value = 0.12;
+  lfoGain.gain.value  = 0.04;
+  lfo.connect(lfoGain);
+  lfoGain.connect(master.gain);
+  lfo.start();
+
+  _ambient = { oscs: [...oscs, lfo], master };
+}
+
+function stopAmbient() {
+  if (!_ambient || !_ctx) return;
+  const { oscs, master } = _ambient;
+  master.gain.setValueAtTime(master.gain.value, _ctx.currentTime);
+  master.gain.linearRampToValueAtTime(0, _ctx.currentTime + 3);
+  setTimeout(() => {
+    oscs.forEach(o => { try { o.stop(); } catch (e) {} });
+    _ambient = null;
+  }, 3200);
+}
+
 // ─── Protocols ───────────────────────────────────────────────────
 const PROTOCOLS = [
   {
@@ -258,7 +312,7 @@ function SessionPlayer({ protocol, onBack }) {
     if (window.speechSynthesis) window.speechSynthesis.cancel();
   };
 
-  useEffect(() => () => stopSpeaking(), []);
+  useEffect(() => () => { stopSpeaking(); stopAmbient(); }, []);
 
   const phase  = protocol.phases[phaseIdx];
   const isLast = phaseIdx === protocol.phases.length - 1;
@@ -346,12 +400,12 @@ function SessionPlayer({ protocol, onBack }) {
 
       <div style={{ display: "flex", gap: 12 }}>
         {!running ? (
-          <button onClick={() => { unlockAudio(); beep("left"); speak(phase.instruction); setRunning(true); setBilateral(false); setTimerDone(false); }}
+          <button onClick={() => { unlockAudio(); startAmbient(); beep("left"); speak(phase.instruction); setRunning(true); setBilateral(false); setTimerDone(false); }}
             style={{ ...btn, flex: 1, background: "rgba(124,152,133,0.15)", border: "1px solid rgba(124,152,133,0.4)", color: "#7C9885" }}>
             {phaseIdx === 0 ? "Begin Session" : "Begin Phase"}
           </button>
         ) : (
-          <button onClick={() => { stopSpeaking(); setRunning(false); setBilateral(false); setTimerDone(false); }}
+          <button onClick={() => { stopSpeaking(); stopAmbient(); setRunning(false); setBilateral(false); setTimerDone(false); }}
             style={{ ...btn, flex: 1, background: "transparent", border: "1px solid rgba(255,255,255,0.12)", color: "rgba(255,255,255,0.4)" }}>
             Pause
           </button>
