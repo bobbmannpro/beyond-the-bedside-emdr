@@ -31,9 +31,13 @@ function useTone(enabled) {
   const play = useCallback((side) => {
     if (!enabled || !ctxRef.current) return;
     try {
-      const src = ctxRef.current.createBufferSource();
+      const ctx = ctxRef.current;
+      const src = ctx.createBufferSource();
       src.buffer = side === "left" ? bufsRef.current.left : bufsRef.current.right;
-      src.connect(ctxRef.current.destination);
+      const panner = ctx.createStereoPanner();
+      panner.pan.value = side === "left" ? -1 : 1;
+      src.connect(panner);
+      panner.connect(ctx.destination);
       src.start();
     } catch(e) {}
   }, [enabled]);
