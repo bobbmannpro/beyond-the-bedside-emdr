@@ -304,7 +304,7 @@ function SessionPlayer({ protocol, onBack }) {
             Pause
           </button>
         )}
-        {(canAdvance || (!running && phaseIdx > 0)) && (
+        {(canAdvance || !running) && (
           <button onClick={advance}
             style={{ ...btn, padding: "18px 28px", background: isLast ? "rgba(124,152,133,0.2)" : "transparent", border: "1px solid rgba(124,152,133,0.3)", color: "#7C9885" }}>
             {isLast ? "Complete" : "Next →"}
