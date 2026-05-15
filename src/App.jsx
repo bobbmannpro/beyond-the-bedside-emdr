@@ -21,17 +21,14 @@ function beep(side) {
     if (_ctx.state === "suspended") _ctx.resume();
     const osc  = _ctx.createOscillator();
     const gain = _ctx.createGain();
-    const pan  = _ctx.createStereoPanner();
     osc.type = "sine";
-    osc.frequency.value = side === "left" ? 396 : 417;
-    pan.pan.value = side === "left" ? -0.85 : 0.85;
-    gain.gain.setValueAtTime(0.75, _ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, _ctx.currentTime + 0.35);
+    osc.frequency.value = side === "left" ? 360 : 420;
+    gain.gain.setValueAtTime(0.8, _ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, _ctx.currentTime + 0.4);
     osc.connect(gain);
-    gain.connect(pan);
-    pan.connect(_ctx.destination);
+    gain.connect(_ctx.destination);
     osc.start(_ctx.currentTime);
-    osc.stop(_ctx.currentTime + 0.36);
+    osc.stop(_ctx.currentTime + 0.41);
   } catch (e) {}
 }
 
@@ -297,7 +294,7 @@ function SessionPlayer({ protocol, onBack }) {
 
       <div style={{ display: "flex", gap: 12 }}>
         {!running ? (
-          <button onClick={() => { unlockAudio(); setRunning(true); setBilateral(false); setTimerDone(false); }}
+          <button onClick={() => { unlockAudio(); beep("left"); setRunning(true); setBilateral(false); setTimerDone(false); }}
             style={{ ...btn, flex: 1, background: "rgba(124,152,133,0.15)", border: "1px solid rgba(124,152,133,0.4)", color: "#7C9885" }}>
             {phaseIdx === 0 ? "Begin Session" : "Begin Phase"}
           </button>
