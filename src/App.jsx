@@ -20,12 +20,22 @@ function useTone(enabled) {
   const bufsRef = useRef({});
 
   const unlock = useCallback(() => {
-    if (ctxRef.current) return;
+    if (ctxRef.current) {
+      ctxRef.current.resume();
+      return;
+    }
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    ctx.resume();
-    bufsRef.current.left = makeToneBuffer(ctx, 396);
-    bufsRef.current.right = makeToneBuffer(ctx, 417);
-    ctxRef.current = ctx;
+    // iOS requires a silent buffer played synchronously in the touch handler
+    const silentBuf = ctx.createBuffer(1, 1, ctx.sampleRate);
+    const silent = ctx.createBufferSource();
+    silent.buffer = silentBuf;
+    silent.connect(ctx.destination);
+    silent.start(0);
+    ctx.resume().then(() => {
+      bufsRef.current.left = makeToneBuffer(ctx, 396);
+      bufsRef.current.right = makeToneBuffer(ctx, 417);
+      ctxRef.current = ctx;
+    });
   }, []);
 
   const play = useCallback((side) => {
