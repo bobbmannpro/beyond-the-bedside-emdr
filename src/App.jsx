@@ -299,6 +299,25 @@ function SessionPlayer({ protocol, onBack }) {
 }
 
 // ─── Main App ────────────────────────────────────────────────────
+function playTestTone() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const buf = ctx.createBuffer(1, 1, ctx.sampleRate);
+    const silent = ctx.createBufferSource();
+    silent.buffer = buf; silent.connect(ctx.destination); silent.start(0);
+    ctx.resume().then(() => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = "sine"; osc.frequency.value = 440;
+      gain.gain.setValueAtTime(0, ctx.currentTime);
+      gain.gain.linearRampToValueAtTime(0.7, ctx.currentTime + 0.05);
+      gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.6);
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.7);
+    });
+  } catch(e) { alert("Audio error: " + e.message); }
+}
+
 export default function EMDRApp() {
   const [view, setView] = useState("home");
   const [activeProtocol, setActiveProtocol] = useState(null);
@@ -352,6 +371,7 @@ export default function EMDRApp() {
             <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
               <button onClick={() => setView("library")} style={{ padding: "16px 32px", fontFamily: "monospace", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.22em", background: "rgba(124,152,133,0.15)", border: "1px solid rgba(124,152,133,0.4)", color: "#7C9885", cursor: "pointer", borderRadius: 3 }}>Browse Sessions →</button>
               <button onClick={() => setView("live")} style={{ padding: "16px 32px", fontFamily: "monospace", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.22em", background: "transparent", border: "1px solid rgba(255,255,255,0.12)", color: "rgba(255,255,255,0.45)", cursor: "pointer", borderRadius: 3 }}>Book Live Therapy</button>
+              <button onClick={playTestTone} style={{ padding: "16px 32px", fontFamily: "monospace", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.22em", background: "transparent", border: "1px solid rgba(255,255,255,0.12)", color: "rgba(255,255,255,0.45)", cursor: "pointer", borderRadius: 3 }}>🔊 Test Audio</button>
             </div>
           </div>
         )}
