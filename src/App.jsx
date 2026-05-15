@@ -213,11 +213,32 @@ function SessionPlayer({ protocol, onBack }) {
   const [timerDone, setTimerDone]     = useState(false);
   const [completed, setCompleted]     = useState(false);
   const [audioEnabled, setAudio]      = useState(true);
+  const [voiceEnabled, setVoice]      = useState(true);
+  const voiceRef                      = useRef(true);
+
+  useEffect(() => { voiceRef.current = voiceEnabled; }, [voiceEnabled]);
+
+  const speak = (text) => {
+    if (!voiceRef.current || !window.speechSynthesis) return;
+    window.speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text);
+    u.rate  = 0.82;
+    u.pitch = 1.0;
+    u.volume = 1.0;
+    window.speechSynthesis.speak(u);
+  };
+
+  const stopSpeaking = () => {
+    if (window.speechSynthesis) window.speechSynthesis.cancel();
+  };
+
+  useEffect(() => () => stopSpeaking(), []);
 
   const phase  = protocol.phases[phaseIdx];
   const isLast = phaseIdx === protocol.phases.length - 1;
 
   const advance = () => {
+    stopSpeaking();
     if (isLast) { setCompleted(true); setRunning(false); return; }
     setPhaseIdx(i => i + 1);
     setRunning(false); setBilateral(false); setTimerDone(false);
@@ -254,9 +275,14 @@ function SessionPlayer({ protocol, onBack }) {
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 48 }}>
         <button onClick={onBack} style={{ fontFamily: "monospace", fontSize: 10, letterSpacing: "0.2em", textTransform: "uppercase", color: "rgba(255,255,255,0.35)", background: "none", border: "none", cursor: "pointer" }}>← Back</button>
         <div style={{ fontFamily: "Georgia, serif", fontStyle: "italic", fontSize: 15, color: "rgba(255,255,255,0.5)" }}>{protocol.title}</div>
-        <button onClick={() => setAudio(a => !a)} style={{ fontFamily: "monospace", fontSize: 10, letterSpacing: "0.18em", textTransform: "uppercase", color: audioEnabled ? "#7C9885" : "rgba(255,255,255,0.25)", background: "none", border: "none", cursor: "pointer" }}>
-          {audioEnabled ? "audio on" : "audio off"}
-        </button>
+        <div style={{ display: "flex", gap: 12 }}>
+          <button onClick={() => setVoice(v => !v)} style={{ fontFamily: "monospace", fontSize: 10, letterSpacing: "0.18em", textTransform: "uppercase", color: voiceEnabled ? "#7C9885" : "rgba(255,255,255,0.25)", background: "none", border: "none", cursor: "pointer" }}>
+            {voiceEnabled ? "voice on" : "voice off"}
+          </button>
+          <button onClick={() => setAudio(a => !a)} style={{ fontFamily: "monospace", fontSize: 10, letterSpacing: "0.18em", textTransform: "uppercase", color: audioEnabled ? "#7C9885" : "rgba(255,255,255,0.25)", background: "none", border: "none", cursor: "pointer" }}>
+            {audioEnabled ? "tones on" : "tones off"}
+          </button>
+        </div>
       </div>
 
       <div style={{ display: "flex", gap: 4, marginBottom: 40 }}>
@@ -294,12 +320,12 @@ function SessionPlayer({ protocol, onBack }) {
 
       <div style={{ display: "flex", gap: 12 }}>
         {!running ? (
-          <button onClick={() => { unlockAudio(); beep("left"); setRunning(true); setBilateral(false); setTimerDone(false); }}
+          <button onClick={() => { unlockAudio(); beep("left"); speak(phase.instruction); setRunning(true); setBilateral(false); setTimerDone(false); }}
             style={{ ...btn, flex: 1, background: "rgba(124,152,133,0.15)", border: "1px solid rgba(124,152,133,0.4)", color: "#7C9885" }}>
             {phaseIdx === 0 ? "Begin Session" : "Begin Phase"}
           </button>
         ) : (
-          <button onClick={() => { setRunning(false); setBilateral(false); setTimerDone(false); }}
+          <button onClick={() => { stopSpeaking(); setRunning(false); setBilateral(false); setTimerDone(false); }}
             style={{ ...btn, flex: 1, background: "transparent", border: "1px solid rgba(255,255,255,0.12)", color: "rgba(255,255,255,0.4)" }}>
             Pause
           </button>
