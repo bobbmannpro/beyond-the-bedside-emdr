@@ -1,95 +1,105 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
 
-function useTone(enabled) {
-  const ctxRef = useRef(null);
+// ─── Audio (module-level, no hooks) ──────────────────────────────
+let _ctx = null;
 
-  const unlock = useCallback(() => {
-    if (ctxRef.current) { ctxRef.current.resume(); return; }
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    // Silent buffer trick — required to unlock audio on iOS Safari
-    const buf = ctx.createBuffer(1, 1, ctx.sampleRate);
-    const src = ctx.createBufferSource();
-    src.buffer = buf;
-    src.connect(ctx.destination);
+function unlockAudio() {
+  try {
+    if (!_ctx) _ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const silent = _ctx.createBuffer(1, 1, _ctx.sampleRate);
+    const src = _ctx.createBufferSource();
+    src.buffer = silent;
+    src.connect(_ctx.destination);
     src.start(0);
-    ctx.resume();
-    ctxRef.current = ctx;
-  }, []);
-
-  const play = useCallback((side) => {
-    if (!enabled || !ctxRef.current) return;
-    const ctx = ctxRef.current;
-    if (ctx.state === "suspended") ctx.resume();
-    try {
-      const osc   = ctx.createOscillator();
-      const gain  = ctx.createGain();
-      const pan   = ctx.createStereoPanner();
-      osc.type = "sine";
-      osc.frequency.value = side === "left" ? 396 : 417;
-      pan.pan.value = side === "left" ? -0.8 : 0.8;
-      gain.gain.setValueAtTime(0, ctx.currentTime);
-      gain.gain.linearRampToValueAtTime(0.6, ctx.currentTime + 0.03);
-      gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.25);
-      osc.connect(gain);
-      gain.connect(pan);
-      pan.connect(ctx.destination);
-      osc.start(ctx.currentTime);
-      osc.stop(ctx.currentTime + 0.28);
-    } catch(e) {}
-  }, [enabled]);
-
-  return { play, unlock };
+    _ctx.resume();
+  } catch (e) {}
 }
 
+function beep(side) {
+  if (!_ctx) return;
+  try {
+    if (_ctx.state === "suspended") _ctx.resume();
+    const osc  = _ctx.createOscillator();
+    const gain = _ctx.createGain();
+    const pan  = _ctx.createStereoPanner();
+    osc.type = "sine";
+    osc.frequency.value = side === "left" ? 396 : 417;
+    pan.pan.value = side === "left" ? -0.85 : 0.85;
+    gain.gain.setValueAtTime(0.75, _ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, _ctx.currentTime + 0.35);
+    osc.connect(gain);
+    gain.connect(pan);
+    pan.connect(_ctx.destination);
+    osc.start(_ctx.currentTime);
+    osc.stop(_ctx.currentTime + 0.36);
+  } catch (e) {}
+}
+
+// ─── Protocols ───────────────────────────────────────────────────
 const PROTOCOLS = [
   {
     id: "safe-place", category: "Stabilization", title: "Safe Place & Resourcing",
-    duration: "18 min", description: "Build an internal anchor before processing begins. Recommended starting point for all users.",
+    duration: "18 min", description: "Build an internal anchor before processing begins. The recommended starting point — complete this before any trauma-processing session.",
     phases: [
-      { name: "Grounding", duration: 60, instruction: "Close your eyes or soften your gaze downward. Take three slow breaths. Notice where your body meets the chair — the weight, the pressure, the contact. You don't have to do anything right now except arrive here.", bilateral: false },
-      { name: "Safe Place Visualization", duration: 90, instruction: "Bring to mind a place — real or imagined — where you feel completely safe. It might be a room, a landscape, a memory. Let the image form without forcing it. Notice what you see, what you hear, what the air feels like.", bilateral: false },
-      { name: "Bilateral Anchoring", duration: 120, instruction: "Hold that safe place in mind. Notice the feeling it brings in your body. Let that sensation strengthen as the bilateral stimulation begins. You're simply associating this feeling with safety.", bilateral: true, sets: 6, speed: "slow" },
-      { name: "Deepening", duration: 90, instruction: "Let the image become more vivid. Add detail — color, texture, temperature. If your mind drifts, gently return. There's no right way to do this. Just notice.", bilateral: true, sets: 4, speed: "slow" },
-      { name: "Resource Installation", duration: 60, instruction: "Give this place a word or phrase — a cue you can return to anytime. Say it silently now. Feel the connection between the word and the safety it holds.", bilateral: false },
-      { name: "Integration", duration: 60, instruction: "Take a slow breath. Let the image fade gently. Notice how your body feels now compared to when you started. Rest here for a moment before returning.", bilateral: false },
+      { name: "Arrival", duration: 60, bilateral: false, instruction: "Close your eyes or soften your gaze. Take three slow breaths — in through the nose, out through the mouth. Notice the weight of your body in the chair. You don't have to do anything right now except arrive here." },
+      { name: "Safe Place", duration: 90, bilateral: false, instruction: "Let a place come to mind — real or imagined — where you feel completely safe and at ease. A room, a landscape, a memory. Don't force it. Let whatever comes, come. Begin to notice what you see there." },
+      { name: "Sensory Detail", duration: 60, bilateral: false, instruction: "Stay in your safe place. What do you hear? What's the temperature? Is there a smell — grass, salt air, woodsmoke? Let the scene fill in around you. The more detail, the stronger the anchor." },
+      { name: "Bilateral Anchoring", duration: 120, bilateral: true, sets: 6, speed: "slow", instruction: "Hold the image and the feeling it gives you. Notice where that feeling lives in your body — warmth, ease, steadiness. Let it grow as the bilateral stimulation begins. You're linking this feeling to safety." },
+      { name: "Deepening", duration: 90, bilateral: true, sets: 4, speed: "slow", instruction: "Let the image become even more vivid. If your mind drifts, gently return. There's no right way. Notice what it feels like to be safe — just that." },
+      { name: "Cue Word", duration: 60, bilateral: false, instruction: "Give your safe place a single word or short phrase. Something that captures it. Say it silently. Notice how your body responds. This word is yours now — you can return here anytime." },
+      { name: "Close", duration: 60, bilateral: false, instruction: "Take a slow breath. Let the image fade gently. Notice how your body feels now compared to when you started. Rest here a moment before you return." },
     ]
   },
   {
     id: "post-shift", category: "Acute Trauma", title: "Post-Shift Processing",
-    duration: "25 min", description: "For use within hours of a difficult shift. Helps the nervous system begin releasing acute distress.",
+    duration: "24 min", description: "For use within hours of a difficult shift. Helps the nervous system begin releasing acute stress before it consolidates.",
     phases: [
-      { name: "Arrival & Check-In", duration: 60, instruction: "You made it through. Whatever happened today, you're here now. Take a breath. Before we begin, just notice what you're carrying — not to analyze it, just to acknowledge it's there.", bilateral: false },
-      { name: "Body Scan", duration: 90, instruction: "Scan slowly from the top of your head down. Where is the tension? Where does your body feel the day most? Just notice. You don't have to fix anything yet.", bilateral: false },
-      { name: "Identify the Target", duration: 60, instruction: "Let one image, moment, or feeling from today come forward — the one that's most present. You don't have to name it out loud. Just hold it lightly in awareness.", bilateral: false },
-      { name: "Bilateral Processing", duration: 150, instruction: "Hold that moment in mind — just the edges of it, whatever feels manageable. Notice what comes up as the stimulation begins. Thoughts, sensations, emotions, nothing at all — all of it is fine. Just notice and let it move.", bilateral: true, sets: 8, speed: "medium" },
-      { name: "Check & Continue", duration: 120, instruction: "What's present now? Has anything shifted — even slightly? Hold whatever is there and continue. You're helping your nervous system complete what it started.", bilateral: true, sets: 6, speed: "medium" },
-      { name: "Containment", duration: 90, instruction: "Imagine placing whatever remains into a container. It can look like anything. The container is strong and secure. What's inside stays inside until you choose to return to it.", bilateral: false },
-      { name: "Close & Ground", duration: 60, instruction: "Return to your breath. Feel your feet on the floor. Look around the room slowly. You've done something important for yourself today.", bilateral: false },
+      { name: "Arrival", duration: 60, bilateral: false, instruction: "You made it through. Whatever the shift brought, you're here now — outside it. Take a breath. Before anything else, just acknowledge that you're carrying something. You don't have to name it yet." },
+      { name: "Body Check", duration: 90, bilateral: false, instruction: "Scan slowly from head to feet. Where is the shift still living in your body? Jaw? Chest? Shoulders? Gut? Just notice without trying to change anything. Your body has been holding the day. This is the beginning of putting it down." },
+      { name: "Identify the Moment", duration: 60, bilateral: false, instruction: "Let one image, moment, or feeling from today come forward — whichever is most present. You don't have to speak it or analyze it. Just hold it lightly at the edges. What number between 0 and 10 captures how disturbing it feels right now?" },
+      { name: "Processing — Round 1", duration: 150, bilateral: true, sets: 8, speed: "medium", instruction: "Hold the edges of that moment — just enough to keep it in awareness. As the stimulation begins, notice what comes up: thoughts, images, sensations, or nothing at all. All of it is fine. Just notice and let it move." },
+      { name: "Check In", duration: 60, bilateral: false, instruction: "What's present now? Has anything shifted — even slightly? What number would you give the disturbance now? You don't have to be done. Just notice where you are." },
+      { name: "Processing — Round 2", duration: 120, bilateral: true, sets: 6, speed: "medium", instruction: "Hold whatever remains and continue. You're helping your nervous system complete what it started today. Let whatever comes, come." },
+      { name: "Containment", duration: 90, bilateral: false, instruction: "Imagine a container — strong, sealed, yours. Place whatever remains inside it. You're not dismissing it. You're choosing when to return to it. The container holds it until you're ready." },
+      { name: "Ground & Close", duration: 60, bilateral: false, instruction: "Feel your feet on the floor. Look slowly around the room. Take a breath. You've done something important — you chose not to carry this alone into the rest of your night." },
     ]
   },
   {
     id: "moral-injury", category: "Cumulative", title: "Moral Injury & Chronic Load",
-    duration: "35 min", description: "For the weight that accumulates over months and years — systemic conflict, helplessness, ethical exhaustion.",
+    duration: "35 min", description: "For what accumulates over years — the gap between the care you wanted to give and what the system allowed. Ethical exhaustion. Helplessness. The weight of what couldn't be changed.",
     phases: [
-      { name: "Grounding", duration: 90, instruction: "This session is for what accumulates — not any single day, but the weight of many. Place both feet flat on the floor. Take three breaths. You don't have to carry anything in this room.", bilateral: false },
-      { name: "Acknowledging the Load", duration: 90, instruction: "Let yourself recognize, without judgment, how much you've been holding. The decisions made under impossible constraints. The gap between the care you wanted to give and what the system allowed. You didn't fail. You were failed.", bilateral: false },
-      { name: "Body Location", duration: 60, instruction: "Where in your body does this live? The chest? The shoulders? The jaw? Place a hand there if that feels right. Your body has been trying to carry something that was never meant to live there.", bilateral: false },
-      { name: "Bilateral Processing — Round 1", duration: 180, instruction: "Hold the general sense of the burden — not any specific event, just the weight of it. As the stimulation begins, let whatever surfaces come without editing.", bilateral: true, sets: 10, speed: "medium" },
-      { name: "Bilateral Processing — Round 2", duration: 150, instruction: "Notice where you are now. Hold what's present and continue. You're not trying to resolve anything today — just begin to loosen what's been held too tight for too long.", bilateral: true, sets: 8, speed: "slow" },
-      { name: "Adaptive Belief", duration: 90, instruction: "What would it mean to believe: 'I did the best I could with what I had.' Let that statement sit. Notice your body's response to it. Even partial belief counts.", bilateral: true, sets: 4, speed: "slow" },
-      { name: "Integration", duration: 90, instruction: "Whatever shifted today — even a fraction — is real. This work doesn't happen all at once. Come back when you're ready. For now, breathe. Ground. You showed up for yourself today.", bilateral: false },
+      { name: "Ground", duration: 90, bilateral: false, instruction: "Place both feet flat on the floor. Take three slow breaths. This session is for the weight that doesn't come from one shift — it comes from many. From years. You don't have to carry it in this room." },
+      { name: "Name the Load", duration: 90, bilateral: false, instruction: "Let yourself recognize, without judgment, how much you've been holding. The decisions made under impossible constraints. The care you wanted to give that the system didn't allow. The moments you had to choose between bad and worse. You didn't fail. You were placed in situations designed to produce exactly this weight." },
+      { name: "Body Location", duration: 60, bilateral: false, instruction: "Where does this live in your body? The chest — that tight, heavy feeling? The shoulders you can't fully drop? Place a hand there if it feels right. Your body has been storing something that was never meant to live there permanently." },
+      { name: "Processing — Round 1", duration: 180, bilateral: true, sets: 10, speed: "medium", instruction: "Hold the general sense of the burden — not any single moment, just the accumulated weight of it. As the stimulation begins, let whatever surfaces come without editing. Anger, grief, numbness, nothing — all of it is information." },
+      { name: "Processing — Round 2", duration: 150, bilateral: true, sets: 8, speed: "slow", instruction: "Notice where you are. Hold what's present and continue. You're not trying to resolve anything today. You're beginning to loosen what's been held too tight, for too long." },
+      { name: "Adaptive Belief", duration: 90, bilateral: true, sets: 4, speed: "slow", instruction: "What would it mean to truly believe: 'I did what I could with what I had, in a system that asked too much.' Let that sit. Not to excuse anything — to release you from carrying what was never entirely yours. Notice your body's response, even if it's partial." },
+      { name: "Integration", duration: 90, bilateral: false, instruction: "Whatever shifted today — even a fraction — is real and it matters. This isn't resolved in one session. But you showed up for yourself, which is more than the system ever asked you to do for yourself. Breathe. Ground. Come back when you're ready." },
     ]
   },
   {
-    id: "grief", category: "Grief", title: "Patient Loss & Bereavement",
-    duration: "28 min", description: "Space for grief that healthcare culture often doesn't allow. You were allowed to care. You are allowed to grieve.",
+    id: "grief", category: "Grief", title: "Patient Loss & Grief",
+    duration: "28 min", description: "For the grief that healthcare culture often has no space for. You were allowed to care. You are allowed to grieve.",
     phases: [
-      { name: "Permission", duration: 90, instruction: "Before anything else: you are allowed to grieve. Whatever you're carrying about this loss — it doesn't make you unprofessional. It means you're human. Take a breath and let that be true.", bilateral: false },
-      { name: "Honoring", duration: 90, instruction: "Let an image of this person — or the sense of them — come gently to mind. Not the end, but who they were. What do you want to hold about them?", bilateral: false },
-      { name: "Feeling the Grief", duration: 60, instruction: "Where is the grief in your body right now? Let yourself feel it without trying to manage it. You've been managing it. This is your time not to.", bilateral: false },
-      { name: "Bilateral Processing", duration: 150, instruction: "Hold the grief — the love that's in it, the loss that's in it — and let the bilateral stimulation begin. Follow wherever it takes you. Cry if you need to. Breathe when you can.", bilateral: true, sets: 8, speed: "slow" },
-      { name: "Continuing Bonds", duration: 120, instruction: "What do you want to carry forward from knowing this person? Grief doesn't end — it transforms. What form do you want it to take?", bilateral: true, sets: 5, speed: "slow" },
-      { name: "Closing Ritual", duration: 90, instruction: "Take a moment to say whatever you need to say — silently or aloud. You don't need to be done grieving. You just need to know you can set it down for now.", bilateral: false },
+      { name: "Permission", duration: 90, bilateral: false, instruction: "Before anything else: you are allowed to feel this. Whatever you're carrying about this loss — it doesn't make you unprofessional or weak. It means you were present with another human being. That is not a liability. Take a breath and let that be true." },
+      { name: "Remember Them", duration: 90, bilateral: false, instruction: "Let an image of this person come gently to mind — not the end, but who they were. A moment with them. Something they said, or the way they looked at you, or simply their presence. What do you want to hold about them?" },
+      { name: "Feel It", duration: 60, bilateral: false, instruction: "Where is the grief in your body right now? Let yourself feel it without managing it. You've been managing it. For this session, you don't have to. This is your time." },
+      { name: "Processing", duration: 150, bilateral: true, sets: 8, speed: "slow", instruction: "Hold the grief — the love that's in it, the loss that's in it — and let the bilateral stimulation begin. Follow wherever it takes you. Cry if you need to. Breathe when you can. There's nothing to do but feel it." },
+      { name: "What You Carry Forward", duration: 120, bilateral: true, sets: 5, speed: "slow", instruction: "Grief doesn't end — it transforms. What do you want to carry forward from knowing this person? What did they leave in you? Let that come into focus as the stimulation continues." },
+      { name: "Closing", duration: 90, bilateral: false, instruction: "Take a moment to say whatever needs to be said — silently or aloud. You don't need to be finished grieving. You just need to know you can set it down for now, and that it will be here when you return." },
+    ]
+  },
+  {
+    id: "burnout", category: "Cumulative", title: "Burnout & Compassion Fatigue",
+    duration: "30 min", description: "For when caring itself has become exhausting. When you feel distant from patients, numb to suffering, or like you have nothing left to give.",
+    phases: [
+      { name: "Ground", duration: 60, bilateral: false, instruction: "Sit quietly. Take three breaths. You don't have to be okay right now. You don't have to perform recovery. This session is for what happens when giving everything, for too long, starts to cost you yourself." },
+      { name: "Acknowledge the Depletion", duration: 90, bilateral: false, instruction: "Compassion fatigue is not a character flaw. It is a physiological response to sustained empathic engagement without adequate recovery. Your nervous system is doing exactly what a nervous system does when it runs out of resources. What you're feeling is real, and it makes sense." },
+      { name: "What's Been Lost", duration: 90, bilateral: false, instruction: "What did you used to feel that you don't anymore? Curiosity? Connection? The satisfaction of helping? Let yourself acknowledge what's missing — not with shame, but as information. You can't refill something you won't look at." },
+      { name: "Processing — Round 1", duration: 150, bilateral: true, sets: 8, speed: "medium", instruction: "Hold the sense of depletion — the flatness, the distance, the going-through-the-motions feeling. As the stimulation begins, let whatever comes surface. There's no wrong response." },
+      { name: "Processing — Round 2", duration: 120, bilateral: true, sets: 6, speed: "slow", instruction: "Stay with what's present. You're not trying to manufacture feeling. You're creating the conditions for it to return on its own terms, in its own time." },
+      { name: "Toward Restoration", duration: 90, bilateral: true, sets: 4, speed: "slow", instruction: "What is one small thing that has ever restored you — even briefly? A walk, a conversation, silence, food, sleep, something you used to love. Let that come to mind. Notice if there's any flicker of something in your body — even faint." },
+      { name: "Close", duration: 60, bilateral: false, instruction: "Recovery from burnout is not a single act. It's a long, often nonlinear process. But it starts with moments like this one — choosing to turn toward yourself with the same care you've given to others. Breathe. You're allowed to matter too." },
     ]
   },
 ];
@@ -97,28 +107,27 @@ const PROTOCOLS = [
 const SPEEDS = { slow: 2200, medium: 1600, fast: 1100 };
 
 // ─── BilateralDot ────────────────────────────────────────────────
-function BilateralDot({ active, speed = "medium", sets = 6, onComplete, onTone }) {
-  const [pos, setPos] = useState(0);
-  const [rep, setRep] = useState(0);
-  const totalReps = sets * 2;
-  const timerRef = useRef(null);
-  const posRef = useRef(0);
-  const repRef = useRef(0);
+function BilateralDot({ active, speed = "medium", sets = 6, onComplete, audioEnabled }) {
+  const [pos, setPos]   = useState(0);
+  const [rep, setRep]   = useState(0);
+  const timerRef        = useRef(null);
+  const stateRef        = useRef({ pos: 0, rep: 0 });
+  const totalReps       = sets * 2;
 
   useEffect(() => {
-    if (!active) { setPos(0); setRep(0); posRef.current = 0; repRef.current = 0; return; }
+    stateRef.current = { pos: 0, rep: 0 };
+    if (!active) { setPos(0); setRep(0); return; }
     timerRef.current = setInterval(() => {
-      const nextPos = posRef.current === 0 ? 1 : 0;
-      const nextRep = repRef.current + 1;
-      posRef.current = nextPos;
-      repRef.current = nextRep;
+      const nextPos = stateRef.current.pos === 0 ? 1 : 0;
+      const nextRep = stateRef.current.rep + 1;
+      stateRef.current = { pos: nextPos, rep: nextRep };
       setPos(nextPos);
       setRep(nextRep);
-      onTone?.(nextPos === 0 ? "left" : "right");
+      if (audioEnabled) beep(nextPos === 0 ? "left" : "right");
       if (nextRep >= totalReps) { clearInterval(timerRef.current); onComplete?.(); }
     }, SPEEDS[speed]);
     return () => clearInterval(timerRef.current);
-  }, [active, speed, totalReps]);
+  }, [active, speed, totalReps, audioEnabled]);
 
   const pct = Math.min(100, Math.round((rep / totalReps) * 100));
 
@@ -162,10 +171,18 @@ function PhaseTimer({ duration, active, onComplete }) {
     <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
       <svg width={48} height={48} viewBox="0 0 48 48">
         <circle cx={24} cy={24} r={20} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth={2} />
-        <circle cx={24} cy={24} r={20} fill="none" stroke="#7C9885" strokeWidth={2} strokeDasharray={`${2 * Math.PI * 20}`} strokeDashoffset={`${2 * Math.PI * 20 * (1 - pct / 100)}`} strokeLinecap="round" transform="rotate(-90 24 24)" style={{ transition: "stroke-dashoffset 1s linear" }} />
-        <text x={24} y={28} textAnchor="middle" fill="rgba(255,255,255,0.7)" fontSize={11} fontFamily="monospace">{m}:{String(s).padStart(2,"0")}</text>
+        <circle cx={24} cy={24} r={20} fill="none" stroke="#7C9885" strokeWidth={2}
+          strokeDasharray={`${2 * Math.PI * 20}`}
+          strokeDashoffset={`${2 * Math.PI * 20 * (1 - pct / 100)}`}
+          strokeLinecap="round" transform="rotate(-90 24 24)"
+          style={{ transition: "stroke-dashoffset 1s linear" }} />
+        <text x={24} y={28} textAnchor="middle" fill="rgba(255,255,255,0.7)" fontSize={11} fontFamily="monospace">
+          {m}:{String(s).padStart(2, "0")}
+        </text>
       </svg>
-      <div style={{ fontFamily: "monospace", fontSize: 11, color: "rgba(255,255,255,0.3)", letterSpacing: "0.15em" }}>{pct < 100 ? `${pct}% complete` : "phase complete"}</div>
+      <div style={{ fontFamily: "monospace", fontSize: 11, color: "rgba(255,255,255,0.3)", letterSpacing: "0.15em" }}>
+        {pct < 100 ? `${pct}% complete` : "phase complete"}
+      </div>
     </div>
   );
 }
@@ -193,44 +210,44 @@ function ProtocolCard({ p, onStart }) {
 
 // ─── SessionPlayer ───────────────────────────────────────────────
 function SessionPlayer({ protocol, onBack }) {
-  const [phaseIdx, setPhaseIdx] = useState(0);
-  const [running, setRunning] = useState(false);
-  const [bilateralDone, setBilateralDone] = useState(false);
-  const [timerDone, setTimerDone] = useState(false);
-  const [completed, setCompleted] = useState(false);
-  const [audioEnabled, setAudioEnabled] = useState(true);
+  const [phaseIdx, setPhaseIdx]       = useState(0);
+  const [running, setRunning]         = useState(false);
+  const [bilateralDone, setBilateral] = useState(false);
+  const [timerDone, setTimerDone]     = useState(false);
+  const [completed, setCompleted]     = useState(false);
+  const [audioEnabled, setAudio]      = useState(true);
 
-  const { play: playTone, unlock: unlockAudio } = useTone(audioEnabled);
-  const phase = protocol.phases[phaseIdx];
+  const phase  = protocol.phases[phaseIdx];
   const isLast = phaseIdx === protocol.phases.length - 1;
 
-  const advance = useCallback(() => {
+  const advance = () => {
     if (isLast) { setCompleted(true); setRunning(false); return; }
     setPhaseIdx(i => i + 1);
-    setRunning(false); setBilateralDone(false); setTimerDone(false);
-  }, [isLast]);
+    setRunning(false); setBilateral(false); setTimerDone(false);
+  };
 
   useEffect(() => {
     if (!running) return;
     if (phase.bilateral && bilateralDone && timerDone) advance();
     if (!phase.bilateral && timerDone) advance();
-  }, [bilateralDone, timerDone, running, phase, advance]);
+  }, [bilateralDone, timerDone, running]);
 
   const canAdvance = phase.bilateral ? (bilateralDone && timerDone) : timerDone;
-
-  const btnBase = { fontFamily: "monospace", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.22em", cursor: "pointer", borderRadius: 3, padding: "18px 0" };
+  const btn = { fontFamily: "monospace", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.22em", cursor: "pointer", borderRadius: 3, padding: "18px 0" };
 
   if (completed) return (
     <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "60vh", gap: 32, textAlign: "center" }}>
       <div style={{ width: 64, height: 64, borderRadius: "50%", background: "rgba(124,152,133,0.15)", border: "1px solid rgba(124,152,133,0.4)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 28 }}>✓</div>
       <div>
         <div style={{ fontFamily: "Georgia, serif", fontStyle: "italic", fontSize: 28, fontWeight: 300, marginBottom: 16 }}>Session Complete</div>
-        <div style={{ color: "rgba(255,255,255,0.45)", fontSize: 14, maxWidth: 400, lineHeight: 1.75, marginBottom: 8 }}>Take your time returning. Sit quietly for a few minutes before moving on.</div>
+        <div style={{ color: "rgba(255,255,255,0.45)", fontSize: 14, maxWidth: 400, lineHeight: 1.75 }}>Take your time returning. Sit quietly for a few minutes before moving on.</div>
         <div style={{ color: "rgba(255,255,255,0.3)", fontSize: 13, fontStyle: "italic", fontFamily: "Georgia, serif", marginTop: 16 }}>"You showed up for yourself today."</div>
       </div>
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap", justifyContent: "center" }}>
-        <button onClick={() => { setPhaseIdx(0); setRunning(false); setBilateralDone(false); setTimerDone(false); setCompleted(false); }} style={{ ...btnBase, color: "#7C9885", background: "rgba(124,152,133,0.1)", border: "1px solid rgba(124,152,133,0.3)", padding: "12px 24px" }}>Repeat Session</button>
-        <button onClick={onBack} style={{ ...btnBase, color: "rgba(255,255,255,0.4)", background: "transparent", border: "1px solid rgba(255,255,255,0.1)", padding: "12px 24px" }}>Back to Library</button>
+        <button onClick={() => { setPhaseIdx(0); setRunning(false); setBilateral(false); setTimerDone(false); setCompleted(false); }}
+          style={{ ...btn, color: "#7C9885", background: "rgba(124,152,133,0.1)", border: "1px solid rgba(124,152,133,0.3)", padding: "12px 24px" }}>Repeat Session</button>
+        <button onClick={onBack}
+          style={{ ...btn, color: "rgba(255,255,255,0.4)", background: "transparent", border: "1px solid rgba(255,255,255,0.1)", padding: "12px 24px" }}>Back to Library</button>
       </div>
     </div>
   );
@@ -240,8 +257,8 @@ function SessionPlayer({ protocol, onBack }) {
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 48 }}>
         <button onClick={onBack} style={{ fontFamily: "monospace", fontSize: 10, letterSpacing: "0.2em", textTransform: "uppercase", color: "rgba(255,255,255,0.35)", background: "none", border: "none", cursor: "pointer" }}>← Back</button>
         <div style={{ fontFamily: "Georgia, serif", fontStyle: "italic", fontSize: 15, color: "rgba(255,255,255,0.5)" }}>{protocol.title}</div>
-        <button onClick={() => setAudioEnabled(a => !a)} style={{ fontFamily: "monospace", fontSize: 10, letterSpacing: "0.18em", textTransform: "uppercase", color: audioEnabled ? "#7C9885" : "rgba(255,255,255,0.25)", background: "none", border: "none", cursor: "pointer" }}>
-          {audioEnabled ? "🎧 audio on" : "🔇 audio off"}
+        <button onClick={() => setAudio(a => !a)} style={{ fontFamily: "monospace", fontSize: 10, letterSpacing: "0.18em", textTransform: "uppercase", color: audioEnabled ? "#7C9885" : "rgba(255,255,255,0.25)", background: "none", border: "none", cursor: "pointer" }}>
+          {audioEnabled ? "audio on" : "audio off"}
         </button>
       </div>
 
@@ -262,8 +279,14 @@ function SessionPlayer({ protocol, onBack }) {
 
       {phase.bilateral && (
         <div style={{ marginBottom: 36 }}>
-          <div style={{ fontFamily: "monospace", fontSize: 10, textTransform: "uppercase", letterSpacing: "0.22em", color: "rgba(255,255,255,0.3)", marginBottom: 16 }}>Bilateral Stimulation — use headphones for full effect</div>
-          <BilateralDot active={running} speed={phase.speed} sets={phase.sets} onTone={playTone} onComplete={() => setBilateralDone(true)} />
+          <div style={{ fontFamily: "monospace", fontSize: 10, textTransform: "uppercase", letterSpacing: "0.22em", color: "rgba(255,255,255,0.3)", marginBottom: 16 }}>Bilateral Stimulation — headphones recommended</div>
+          <BilateralDot
+            active={running}
+            speed={phase.speed}
+            sets={phase.sets}
+            audioEnabled={audioEnabled}
+            onComplete={() => setBilateral(true)}
+          />
         </div>
       )}
 
@@ -274,18 +297,19 @@ function SessionPlayer({ protocol, onBack }) {
 
       <div style={{ display: "flex", gap: 12 }}>
         {!running ? (
-          <button onClick={() => { unlockAudio(); setRunning(true); setBilateralDone(false); setTimerDone(false); }}
-            style={{ ...btnBase, flex: 1, background: "rgba(124,152,133,0.15)", border: "1px solid rgba(124,152,133,0.4)", color: "#7C9885" }}>
+          <button onClick={() => { unlockAudio(); setRunning(true); setBilateral(false); setTimerDone(false); }}
+            style={{ ...btn, flex: 1, background: "rgba(124,152,133,0.15)", border: "1px solid rgba(124,152,133,0.4)", color: "#7C9885" }}>
             {phaseIdx === 0 ? "Begin Session" : "Begin Phase"}
           </button>
         ) : (
-          <button onClick={() => { setRunning(false); setBilateralDone(false); setTimerDone(false); }}
-            style={{ ...btnBase, flex: 1, background: "transparent", border: "1px solid rgba(255,255,255,0.12)", color: "rgba(255,255,255,0.4)" }}>
+          <button onClick={() => { setRunning(false); setBilateral(false); setTimerDone(false); }}
+            style={{ ...btn, flex: 1, background: "transparent", border: "1px solid rgba(255,255,255,0.12)", color: "rgba(255,255,255,0.4)" }}>
             Pause
           </button>
         )}
         {(canAdvance || (!running && phaseIdx > 0)) && (
-          <button onClick={advance} style={{ ...btnBase, padding: "18px 28px", background: isLast ? "rgba(124,152,133,0.2)" : "transparent", border: "1px solid rgba(124,152,133,0.3)", color: "#7C9885" }}>
+          <button onClick={advance}
+            style={{ ...btn, padding: "18px 28px", background: isLast ? "rgba(124,152,133,0.2)" : "transparent", border: "1px solid rgba(124,152,133,0.3)", color: "#7C9885" }}>
             {isLast ? "Complete" : "Next →"}
           </button>
         )}
@@ -299,30 +323,14 @@ function SessionPlayer({ protocol, onBack }) {
 }
 
 // ─── Main App ────────────────────────────────────────────────────
-function playTestTone() {
-  try {
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    const buf = ctx.createBuffer(1, 1, ctx.sampleRate);
-    const silent = ctx.createBufferSource();
-    silent.buffer = buf; silent.connect(ctx.destination); silent.start(0);
-    ctx.resume();
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = "sine"; osc.frequency.value = 440;
-    gain.gain.setValueAtTime(0.8, ctx.currentTime);
-    gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.8);
-    osc.connect(gain); gain.connect(ctx.destination);
-    osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.8);
-  } catch(e) { alert("Audio error: " + e.message); }
-}
-
 export default function EMDRApp() {
-  const [view, setView] = useState("home");
-  const [activeProtocol, setActiveProtocol] = useState(null);
-  const startSession = (p) => { setActiveProtocol(p); setView("session"); };
+  const [view, setView]               = useState("home");
+  const [activeProtocol, setProtocol] = useState(null);
+
+  const startSession = (p) => { setProtocol(p); setView("session"); };
 
   const navBtn = (v, label) => (
-    <button key={v} onClick={() => { setView(v); setActiveProtocol(null); }}
+    <button key={v} onClick={() => { setView(v); setProtocol(null); }}
       style={{ fontFamily: "monospace", fontSize: 10, textTransform: "uppercase", letterSpacing: "0.18em", padding: "8px 14px", borderRadius: 3, cursor: "pointer", border: "1px solid", transition: "all 0.2s", borderColor: view === v ? "rgba(124,152,133,0.4)" : "transparent", background: view === v ? "rgba(124,152,133,0.1)" : "transparent", color: view === v ? "#7C9885" : "rgba(255,255,255,0.35)" }}>
       {label}
     </button>
@@ -331,7 +339,7 @@ export default function EMDRApp() {
   return (
     <div style={{ minHeight: "100vh", background: "#050608", color: "#F4EFE7", fontFamily: "Inter, system-ui, sans-serif", fontWeight: 300 }}>
       <nav style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "18px 32px", borderBottom: "1px solid rgba(255,255,255,0.07)", background: "rgba(5,6,8,0.92)", position: "sticky", top: 0, zIndex: 50, flexWrap: "wrap", gap: 12 }}>
-        <div onClick={() => { setView("home"); setActiveProtocol(null); }} style={{ fontFamily: "Georgia, serif", fontSize: 15, cursor: "pointer" }}>
+        <div onClick={() => { setView("home"); setProtocol(null); }} style={{ fontFamily: "Georgia, serif", fontSize: 15, cursor: "pointer" }}>
           Beyond <span style={{ color: "#7C9885" }}>·</span> The Bedside
           <span style={{ fontFamily: "monospace", fontSize: 10, color: "rgba(255,255,255,0.3)", letterSpacing: "0.18em", marginLeft: 12, textTransform: "uppercase" }}>EMDR</span>
         </div>
@@ -344,7 +352,6 @@ export default function EMDRApp() {
 
       <div style={{ maxWidth: 1100, margin: "0 auto", padding: "64px 32px 100px" }}>
 
-        {/* HOME */}
         {view === "home" && (
           <div>
             <div style={{ paddingBottom: 56, borderBottom: "1px solid rgba(255,255,255,0.07)", marginBottom: 64 }}>
@@ -354,10 +361,10 @@ export default function EMDRApp() {
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 1, background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.06)", marginBottom: 64 }}>
               {[
-                { icon: "◎", title: "Bilateral Stimulation", desc: "On-screen dot tracking with synchronized tones. Use headphones for full left/right audio effect." },
-                { icon: "◌", title: "Phased Protocols", desc: "Each session follows the structured EMDR model — stabilization through integration — at your pace." },
-                { icon: "⟳", title: "Clinician-Specific", desc: "Sessions designed around the specific traumas healthcare workers carry — not generic stress content." },
-                { icon: "◈", title: "Live + Self-Guided", desc: "On-demand guided sessions or scheduled Zoom sessions with an EMDR-certified therapist." },
+                { icon: "◎", title: "Bilateral Stimulation", desc: "On-screen dot tracking with alternating tones. Use headphones for the full left/right bilateral effect." },
+                { icon: "◌", title: "Phased Protocols", desc: "Each session follows the EMDR model — stabilization through integration — at your own pace." },
+                { icon: "⟳", title: "Clinician-Specific", desc: "Sessions designed around what healthcare workers actually carry — not generic stress content." },
+                { icon: "◈", title: "Live + Self-Guided", desc: "On-demand guided sessions or scheduled sessions with an EMDR-certified therapist." },
               ].map((f, i) => (
                 <div key={i} style={{ background: "#050608", padding: "36px 28px" }}>
                   <div style={{ fontSize: 20, color: "#7C9885", marginBottom: 16 }}>{f.icon}</div>
@@ -369,12 +376,14 @@ export default function EMDRApp() {
             <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
               <button onClick={() => setView("library")} style={{ padding: "16px 32px", fontFamily: "monospace", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.22em", background: "rgba(124,152,133,0.15)", border: "1px solid rgba(124,152,133,0.4)", color: "#7C9885", cursor: "pointer", borderRadius: 3 }}>Browse Sessions →</button>
               <button onClick={() => setView("live")} style={{ padding: "16px 32px", fontFamily: "monospace", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.22em", background: "transparent", border: "1px solid rgba(255,255,255,0.12)", color: "rgba(255,255,255,0.45)", cursor: "pointer", borderRadius: 3 }}>Book Live Therapy</button>
-              <button onClick={playTestTone} style={{ padding: "16px 32px", fontFamily: "monospace", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.22em", background: "transparent", border: "1px solid rgba(255,255,255,0.12)", color: "rgba(255,255,255,0.45)", cursor: "pointer", borderRadius: 3 }}>🔊 Test Audio</button>
+              <button onClick={() => { unlockAudio(); beep("left"); setTimeout(() => beep("right"), 400); }}
+                style={{ padding: "16px 32px", fontFamily: "monospace", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.22em", background: "transparent", border: "1px solid rgba(255,255,255,0.12)", color: "rgba(255,255,255,0.45)", cursor: "pointer", borderRadius: 3 }}>
+                Test Audio
+              </button>
             </div>
           </div>
         )}
 
-        {/* LIBRARY */}
         {view === "library" && !activeProtocol && (
           <div>
             <div style={{ marginBottom: 48 }}>
@@ -388,12 +397,10 @@ export default function EMDRApp() {
           </div>
         )}
 
-        {/* SESSION */}
         {view === "session" && activeProtocol && (
-          <SessionPlayer protocol={activeProtocol} onBack={() => { setView("library"); setActiveProtocol(null); }} />
+          <SessionPlayer protocol={activeProtocol} onBack={() => { setView("library"); setProtocol(null); }} />
         )}
 
-        {/* LIVE */}
         {view === "live" && (
           <div>
             <div style={{ marginBottom: 56 }}>
