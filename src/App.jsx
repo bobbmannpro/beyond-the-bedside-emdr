@@ -214,16 +214,42 @@ function SessionPlayer({ protocol, onBack }) {
   const [completed, setCompleted]     = useState(false);
   const [audioEnabled, setAudio]      = useState(true);
   const [voiceEnabled, setVoice]      = useState(true);
-  const voiceRef                      = useRef(true);
+  const voiceEnabledRef               = useRef(true);
+  const ttsVoiceRef                   = useRef(null);
 
-  useEffect(() => { voiceRef.current = voiceEnabled; }, [voiceEnabled]);
+  useEffect(() => { voiceEnabledRef.current = voiceEnabled; }, [voiceEnabled]);
+
+  useEffect(() => {
+    const pickVoice = () => {
+      const voices = window.speechSynthesis.getVoices();
+      const preferred = [
+        "Samantha", "Karen", "Moira", "Tessa", "Victoria",
+        "Google US English", "Microsoft Zira", "Microsoft Jenny",
+        "Alice", "Fiona", "Serena",
+      ];
+      for (const name of preferred) {
+        const match = voices.find(v => v.name.includes(name));
+        if (match) { ttsVoiceRef.current = match; return; }
+      }
+      // Fall back to any English voice that isn't obviously male
+      const maleNames = /David|James|Mark|Alex|Daniel|Fred|Ralph|Bruce|Tom|Aaron/i;
+      ttsVoiceRef.current =
+        voices.find(v => v.lang.startsWith("en") && !maleNames.test(v.name)) ||
+        voices.find(v => v.lang.startsWith("en")) ||
+        null;
+    };
+    pickVoice();
+    window.speechSynthesis.addEventListener("voiceschanged", pickVoice);
+    return () => window.speechSynthesis.removeEventListener("voiceschanged", pickVoice);
+  }, []);
 
   const speak = (text) => {
-    if (!voiceRef.current || !window.speechSynthesis) return;
+    if (!voiceEnabledRef.current || !window.speechSynthesis) return;
     window.speechSynthesis.cancel();
     const u = new SpeechSynthesisUtterance(text);
-    u.rate  = 0.82;
-    u.pitch = 1.0;
+    if (ttsVoiceRef.current) u.voice = ttsVoiceRef.current;
+    u.rate   = 0.82;
+    u.pitch  = 1.0;
     u.volume = 1.0;
     window.speechSynthesis.speak(u);
   };
