@@ -1,51 +1,40 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 
-function makeToneBuffer(ctx, freq) {
-  const sampleRate = ctx.sampleRate;
-  const numSamples = Math.floor(sampleRate * 0.28);
-  const buffer = ctx.createBuffer(1, numSamples, sampleRate);
-  const data = buffer.getChannelData(0);
-  const fadeLen = Math.floor(numSamples * 0.15);
-  for (let i = 0; i < numSamples; i++) {
-    let amp = 0.55;
-    if (i < fadeLen) amp *= i / fadeLen;
-    else if (i > numSamples - fadeLen) amp *= (numSamples - i) / fadeLen;
-    data[i] = amp * Math.sin(2 * Math.PI * freq * i / sampleRate);
-  }
-  return buffer;
-}
-
 function useTone(enabled) {
   const ctxRef = useRef(null);
-  const bufsRef = useRef({});
 
   const unlock = useCallback(() => {
     if (ctxRef.current) { ctxRef.current.resume(); return; }
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    // Play silent buffer synchronously — required to unlock iOS audio
-    const silentBuf = ctx.createBuffer(1, 1, ctx.sampleRate);
-    const silent = ctx.createBufferSource();
-    silent.buffer = silentBuf;
-    silent.connect(ctx.destination);
-    silent.start(0);
-    // Build tone buffers synchronously before any async work
-    bufsRef.current.left  = makeToneBuffer(ctx, 396);
-    bufsRef.current.right = makeToneBuffer(ctx, 417);
-    ctxRef.current = ctx;
+    // Silent buffer trick — required to unlock audio on iOS Safari
+    const buf = ctx.createBuffer(1, 1, ctx.sampleRate);
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    src.connect(ctx.destination);
+    src.start(0);
     ctx.resume();
+    ctxRef.current = ctx;
   }, []);
 
   const play = useCallback((side) => {
     if (!enabled || !ctxRef.current) return;
+    const ctx = ctxRef.current;
+    if (ctx.state === "suspended") { ctx.resume(); return; }
     try {
-      const ctx = ctxRef.current;
-      const src = ctx.createBufferSource();
-      src.buffer = side === "left" ? bufsRef.current.left : bufsRef.current.right;
-      const panner = ctx.createStereoPanner();
-      panner.pan.value = side === "left" ? -1 : 1;
-      src.connect(panner);
-      panner.connect(ctx.destination);
-      src.start();
+      const osc   = ctx.createOscillator();
+      const gain  = ctx.createGain();
+      const pan   = ctx.createStereoPanner();
+      osc.type = "sine";
+      osc.frequency.value = side === "left" ? 396 : 417;
+      pan.pan.value = side === "left" ? -0.8 : 0.8;
+      gain.gain.setValueAtTime(0, ctx.currentTime);
+      gain.gain.linearRampToValueAtTime(0.6, ctx.currentTime + 0.03);
+      gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.25);
+      osc.connect(gain);
+      gain.connect(pan);
+      pan.connect(ctx.destination);
+      osc.start(ctx.currentTime);
+      osc.stop(ctx.currentTime + 0.28);
     } catch(e) {}
   }, [enabled]);
 
